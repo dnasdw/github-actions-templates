@@ -1,0 +1,102 @@
+name: git-checkout
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit_id:
+        description: The branch, tag or SHA of the submodule to checkout.
+        required: false
+        default:
+  push:
+    branches:
+
+jobs:
+  secrets:
+    runs-on: ubuntu-20.04
+    outputs:
+      HAS_MY_GITHUB_TOKEN: ${{ steps.check.outputs.HAS_MY_GITHUB_TOKEN }}
+      HAS_MY_GITLAB_TOKEN: ${{ steps.check.outputs.HAS_MY_GITLAB_TOKEN }}
+      HAS_MY_BITBUCKET_USERNAME: ${{ steps.check.outputs.HAS_MY_BITBUCKET_USERNAME }}
+      HAS_MY_BITBUCKET_TOKEN: ${{ steps.check.outputs.HAS_MY_BITBUCKET_TOKEN }}
+      HAS_MY_GITEE_USERNAME: ${{ steps.check.outputs.HAS_MY_GITEE_USERNAME }}
+      HAS_MY_GITEE_TOKEN: ${{ steps.check.outputs.HAS_MY_GITEE_TOKEN }}
+    steps:
+      - name: Check secrets
+        id: check
+        env:
+          MY_GITHUB_TOKEN: ${{ secrets.MY_GITHUB_TOKEN }}
+          MY_GITLAB_TOKEN: ${{ secrets.MY_GITLAB_TOKEN }}
+          MY_BITBUCKET_USERNAME: ${{ secrets.MY_BITBUCKET_USERNAME }}
+          MY_BITBUCKET_TOKEN: ${{ secrets.MY_BITBUCKET_TOKEN }}
+          MY_GITEE_USERNAME: ${{ secrets.MY_GITEE_USERNAME }}
+          MY_GITEE_TOKEN: ${{ secrets.MY_GITEE_TOKEN }}
+        run: |
+          echo "::set-output name=HAS_MY_GITHUB_TOKEN::${{ env.MY_GITHUB_TOKEN != '' }}"
+          echo "::set-output name=HAS_MY_GITLAB_TOKEN::${{ env.MY_GITLAB_TOKEN != '' }}"
+          echo "::set-output name=HAS_MY_BITBUCKET_USERNAME::${{ env.MY_BITBUCKET_USERNAME != '' }}"
+          echo "::set-output name=HAS_MY_BITBUCKET_TOKEN::${{ env.MY_BITBUCKET_TOKEN != '' }}"
+          echo "::set-output name=HAS_MY_GITEE_USERNAME::${{ env.MY_GITEE_USERNAME != '' }}"
+          echo "::set-output name=HAS_MY_GITEE_TOKEN::${{ env.MY_GITEE_TOKEN != '' }}"
+
+  deploy:
+    needs: secrets
+    runs-on: ubuntu-20.04
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}
+    steps:
+      - name: Setup for bitbucket
+        if: ${{ needs.secrets.outputs.HAS_MY_BITBUCKET_USERNAME == 'true' && needs.secrets.outputs.HAS_MY_BITBUCKET_TOKEN == 'true' }}
+        run: |
+          git config --global --add "http.https://bitbucket.org/.extraheader" "Authorization: Basic $(echo -n ${{ secrets.MY_BITBUCKET_USERNAME }}:${{ secrets.MY_BITBUCKET_TOKEN }} | base64 --wrap=0)"
+
+      - name: Setup for gitee
+        if: ${{ needs.secrets.outputs.HAS_MY_GITEE_USERNAME == 'true' && needs.secrets.outputs.HAS_MY_GITEE_TOKEN == 'true' }}
+        run: |
+          git config --global --add "http.https://gitee.com/.extraheader" "Authorization: Basic $(echo -n ${{ secrets.MY_GITEE_USERNAME }}:${{ secrets.MY_GITEE_TOKEN }} | base64 --wrap=0)"
+
+      - name: Setup for gitlab
+        if: ${{ needs.secrets.outputs.HAS_MY_GITLAB_TOKEN == 'true' }}
+        run: |
+          git config --global --add "http.https://gitlab.com/.extraheader" "Authorization: Basic $(echo -n x-access-token:${{ secrets.MY_GITLAB_TOKEN }} | base64 --wrap=0)"
+
+      # if (needs.secrets.outputs.HAS_MY_GITHUB_TOKEN == "true") {
+
+      - name: Checkout with github token
+        if: ${{ needs.secrets.outputs.HAS_MY_GITHUB_TOKEN == 'true' }}
+        uses: actions/checkout@v2
+        with:
+          token: ${{ secrets.MY_GITHUB_TOKEN }}
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Checkout submodule with github token
+        if: ${{ github.event.inputs.commit_id != '' && needs.secrets.outputs.HAS_MY_GITHUB_TOKEN == 'true' }}
+        uses: actions/checkout@v2
+        with:
+          repository: dnasdw/repo_name
+          path: path/to/dir_name
+          ref: ${{ github.event.inputs.commit_id }}
+          token: ${{ secrets.MY_GITHUB_TOKEN }}
+          submodules: recursive
+          fetch-depth: 0
+
+      # else if (needs.secrets.outputs.HAS_MY_GITHUB_TOKEN == "false") {
+
+      - name: Checkout without github token
+        if: ${{ needs.secrets.outputs.HAS_MY_GITHUB_TOKEN == 'false' }}
+        uses: actions/checkout@v2
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Checkout submodule without github token
+        if: ${{ github.event.inputs.commit_id != '' && needs.secrets.outputs.HAS_MY_GITHUB_TOKEN == 'false' }}
+        uses: actions/checkout@v2
+        with:
+          repository: dnasdw/repo_name
+          path: path/to/dir_name
+          ref: ${{ github.event.inputs.commit_id }}
+          submodules: recursive
+          fetch-depth: 0
+
+      # } // end if
